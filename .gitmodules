@@ -1,0 +1,30 @@
+[submodule "nk3/nitrokey-3-firmware"]
+	path = nk3/nitrokey-3-firmware
+	url = https://github.com/Nitrokey/nitrokey-3-firmware.git
+[submodule "nk3/trussed"]
+	path = nk3/trussed
+	url = https://github.com/trussed-dev/trussed.git
+[submodule "nk3/admin-app"]
+	path = nk3/admin-app
+	url = https://github.com/Nitrokey/admin-app.git
+[submodule "nk3/opcard-rs"]
+	path = nk3/opcard-rs
+	url = https://github.com/Nitrokey/opcard-rs
+[submodule "nk3/piv-authenticator"]
+	path = nk3/piv-authenticator
+	url = https://github.com/trussed-dev/piv-authenticator.git
+[submodule "nk3/trussed-secrets-app"]
+	path = nk3/trussed-secrets-app
+	url = https://github.com/Nitrokey/trussed-secrets-app
+[submodule "nk3/trussed-auth"]
+	path = nk3/trussed-auth
+	url = https://github.com/trussed-dev/trussed-auth
+[submodule "nk3/trussed-rsa-backend"]
+	path = nk3/trussed-rsa-backend
+	url = https://github.com/trussed-dev/trussed-rsa-backend.git
+[submodule "nk3/trussed-se050-backend"]
+	path = nk3/trussed-se050-backend
+	url = https://github.com/Nitrokey/trussed-se050-backend.git
+[submodule "nk3/trussed-staging"]
+	path = nk3/trussed-staging
+	url = https://github.com/trussed-dev/trussed-staging.git

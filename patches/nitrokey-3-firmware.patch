@@ -1,5 +1,5 @@
 diff --git a/components/apps/src/lib.rs b/components/apps/src/lib.rs
-index 4f15538..20b8008 100644
+index 4f155382..dba2d59f 100644
 --- a/components/apps/src/lib.rs
 +++ b/components/apps/src/lib.rs
 @@ -497,6 +497,26 @@ const fn validate_mechanisms() {
@@ -29,7 +29,23 @@ index 4f15538..20b8008 100644
          // The usbip runner does not have the mechanisms normally provided by the se050 backend.
          // Until there is a backend implementing them in software, we ignore them and return an
          // error at runtime.
-@@ -1184,6 +1204,10 @@ impl<R: Runner> App<R> for PivApp<R> {
+@@ -1107,12 +1127,14 @@ impl<R: Runner> App<R> for OpcardApp<R> {
+         {
+             use opcard::AllowedAlgorithms as Alg;
+             options.allowed_imports = Alg::P_256
++                | Alg::P_384
+                 | Alg::RSA_2048
+                 | Alg::RSA_3072
+                 | Alg::RSA_4096
+                 | Alg::X_25519
+                 | Alg::ED_25519;
+-            options.allowed_generation = Alg::P_256 | Alg::RSA_2048 | Alg::X_25519 | Alg::ED_25519;
++            options.allowed_generation =
++                Alg::P_256 | Alg::P_384 | Alg::RSA_2048 | Alg::X_25519 | Alg::ED_25519;
+         }
+         #[cfg(feature = "se050")]
+         {
+@@ -1184,6 +1206,10 @@ impl<R: Runner> App<R> for PivApp<R> {
          const BACKENDS_PIV: &[BackendId<Backend>] = &[
              #[cfg(feature = "se050")]
              BackendId::Custom(Backend::Se050),

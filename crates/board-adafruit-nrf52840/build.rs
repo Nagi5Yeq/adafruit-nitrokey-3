@@ -1,11 +1,6 @@
 use std::{env, path::PathBuf};
 
-// Adafruit NRF52840 memory layout (with Nordic MBR + Adafruit bootloader)
-// MBR: 0x0000-0x1000, App: 0x1000-0xD8000, FS: 0xD8000-0xF4000, Bootloader: 0xF4000+
-const FLASH_BASE: usize = 0x27_000;
-const FLASH_END: usize = 0xD8_000;
-const FS_BASE: usize = 0xD8_000;
-const FS_END: usize = 0xF4_000;
+use adafruit_memory_layout::{FLASH_BASE, FLASH_END, FS_BASE, FS_END};
 
 fn main() {
     println!(
@@ -29,6 +24,8 @@ fn main() {
     println!("cargo:rustc-link-search={}", out_dir.display());
     println!("cargo:rustc-link-search={}", ld_dir.display());
     println!("cargo:rustc-link-arg=-Tcortex-m-rt_0.7.5_link.x");
+    // Without paging, lld does not map the ELF headers into a LOAD segment below
+    // FLASH_BASE, which would place them inside the SoftDevice.
+    println!("cargo:rustc-link-arg=--nmagic");
     println!("cargo:rerun-if-changed=ld/nrf52-memory-template.x");
-    println!("cargo:rerun-if-changed=src/memory_map.rs");
 }

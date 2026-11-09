@@ -1,0 +1,45 @@
+[package]
+name = "runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+apps = { workspace = true }
+utils = { workspace = true, features = ["storage"] }
+trussed = { workspace = true }
+trussed-core = { workspace = true }
+trussed-manage = { workspace = true }
+littlefs2 = { workspace = true }
+littlefs2-core = { workspace = true }
+apdu-dispatch = { workspace = true }
+ctaphid-dispatch = { workspace = true }
+interchange = { workspace = true }
+nfc-device = { workspace = true }
+usb-device = { workspace = true }
+usbd-ccid = { workspace = true }
+usbd-ctaphid = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+delog = { workspace = true }
+embedded-time = { workspace = true }
+nb = { workspace = true }
+ref-swap = { workspace = true }
+
+[features]
+default = ["trussed-auth"]
+log-all = []
+log-trace = []
+log-debug = []
+log-info = []
+log-warn = []
+log-error = []
+log-none = []
+log-rtt = []
+log-semihosting = []
+no-delog = ["delog/knock-it-off"]
+no-buttons = []
+no-encrypted-storage = []
+format-filesystem = []
+provisioner = ["apps/provisioner-app"]
+trussed-auth = ["apps/backend-auth"]

@@ -1,155 +1,116 @@
-[package]
-name = "adafruit-nk3"
-version = "0.1.0"
+[workspace]
+members = [
+    "crates/runner",
+    "crates/board-adafruit-nrf52840",
+]
+default-members = ["crates/board-adafruit-nrf52840"]
+resolver = "2"
+exclude = ["nk3"]
+
+[workspace.package]
+version = "1.9.1"
 edition = "2021"
+license = "MIT"
 
-# ============================================================================
-# Dependencies — mirrors runners/embedded (embedded-runner-lib) for NK3AM
-# ============================================================================
-
-[dependencies]
-### base dependencies (from embedded runner)
+[workspace.dependencies]
+# NK3 app layer
 apps = { path = "nk3/nitrokey-3-firmware/components/apps", features = ["nk3"] }
-boards = { path = "nk3/nitrokey-3-firmware/components/boards", features = ["trussed-auth", "board-nk3am"] }
+utils = { path = "nk3/nitrokey-3-firmware/components/utils" }
+memory-regions = { path = "nk3/nitrokey-3-firmware/components/memory-regions" }
+
+# Trussed
+trussed = { version = "0.2", features = ["default-mechanisms", "p384"] }
+trussed-core = "0.2"
+trussed-rsa-alloc = { version = "0.5", features = ["raw"] }
+interchange = "0.3.3"
+
+# Filesystem
+littlefs2 = { version = "=0.8.0", features = ["c-stubs", "unstable-littlefs-patched"] }
+littlefs2-sys = { version = "=0.4.0", features = ["tinyrlibc"] }
+littlefs2-core = "0.1"
+
+# Protocol dispatchers
+apdu-dispatch = "0.4"
+ctaphid-dispatch = "0.4"
+nfc-device = { path = "nk3/nitrokey-3-firmware/components/nfc-device" }
+
+# Vendor NK3 components (for workspace-level reference)
+ndef-app = { path = "nk3/nitrokey-3-firmware/components/ndef-app" }
+provisioner-app = { path = "nk3/nitrokey-3-firmware/components/provisioner-app" }
+lfs-backup = { path = "nk3/nitrokey-3-firmware/components/lfs-backup" }
+fm11nc08 = { path = "nk3/nitrokey-3-firmware/components/fm11nc08" }
+
+# USB
+usb-device = "0.3"
+usbd-ccid = "0.5"
+usbd-ctaphid = "0.5"
+
+# Crypto / RNG
+rand = { version = "0.8.5", default-features = false }
+rand_chacha = { version = "0.3.1", default-features = false }
+
+# Logging
 delog = "0.1"
+rtt-target = { version = "0.3", features = ["cortex-m"] }
+cortex-m-semihosting = "0.3.5"
+
+# Misc
+ref-swap = "0.1.0"
+trussed-manage = "0.3.0"
+spi-memory = "0.2.0"
+generic-array = "0.14"
+
+# Embedded
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7.5"
-cortex-m-rtic = "1.0"
 embedded-hal = "0.2.3"
-littlefs2 = { version = "0.7.0", features = ["c-stubs", "unstable-littlefs-patched"] }
-littlefs2-core = "0.1"
-nfc-device = { path = "nk3/nitrokey-3-firmware/components/nfc-device" }
-utils = { path = "nk3/nitrokey-3-firmware/components/utils", features = ["storage"] }
+embedded-time = "0.12"
+nb = "1"
 
-### protocols and dispatchers
-apdu-dispatch = "0.4"
+# Embedded storage
+embedded-storage = "0.3"
 
-### trussed core
-trussed = { version = "0.1", features = ["default-mechanisms", "p384", "p521"] }
-interchange = "0.3"
+# RTIC
+cortex-m-rtic = "1.0"
 
-### usb machinery
-usb-device = "0.2"
+# NRF52
+nrf52840-hal = "0.18"
+nrf52840-pac = "0.12"
 
-### NRF52 specific dependencies
-nrf52840-hal = { version = "0.15.1", optional = true }
-nrf52840-pac = { version = "0.11", optional = true }
-
-### LPC55 specific dependencies
-lpc55-hal = { version = "0.5", optional = true }
-lpc55-pac = { version = "0.5", optional = true }
-nb = { version = "1", optional = true }
-systick-monotonic = { version = "1.0.0", optional = true }
-
-### Allocator
-embedded-alloc = { version = "0.6.0", optional = true }
-
-### SE050 — kept as dependency; feature-gated via boards/apps
-se05x = { version = "0.4", optional = true }
-
-# littlefs2-sys for intrinsics feature
-littlefs2-sys = { version = "0.3", optional = true }
-
-[build-dependencies]
-utils = { path = "nk3/nitrokey-3-firmware/components/utils", features = ["build"] }
-
-# ============================================================================
-# Features
-# ============================================================================
-
-[features]
-default = ["alloc", "log-rtt", "log-all", "log-debugP", "board-adafruit"]
-
-alloc = ["embedded-alloc"]
-
-# board selection
-board-adafruit = ["boards/board-nk3am", "soc-nrf52"]
-
-# SoC selection
-soc-nrf52 = ["nrf52840-hal", "nrf52840-pac"]
-soc-lpc55 = ["lpc55-hal", "lpc55-pac", "nb", "systick-monotonic"]
-
-se050 = ["apps/se050", "boards/se050", "dep:se05x"]
-
-# build variants
-test = ["apps/nk3-test", "utils/test"]
-develop = ["no-encrypted-storage", "apps/no-reset-time-window", "log-traceP"]
-develop-no-press = ["develop", "no-buttons"]
-provisioner = ["apps/nk3-provisioner", "boards/provisioner", "write-undefined-flash", "no-buttons", "apps/no-reset-time-window", "lpc55-hardware-checks"]
-
-# delog control
-no-delog = ["boards/no-delog", "delog/knock-it-off"]
-
-# Disable littlefs use of compiler intrinsics
-littlefs-software-intrinsics = ["littlefs2-sys/software-intrinsics"]
-
-# Do not use encryption for the filesystem
-no-encrypted-storage = ["boards/no-encrypted-storage"]
-
-# Check for undefined flash and write to determined value (for prince provisioning)
-write-undefined-flash = []
-
-# Use to auto-succeed every user presence check
-no-buttons = ["boards/no-buttons"]
-
-# Format filesystem anyway
-format-filesystem = ["boards/format-filesystem"]
-
-lpc55-hardware-checks = []
-
-# factory reset
-factory-reset = ["apps/factory-reset"]
-
-# logging levels
-log-all = ["boards/log-all"]
-log-trace = []
-log-debug = []
-log-info = []
-log-warn = []
-log-error = ["boards/log-error"]
-log-none = []
-
-log-traceP = ["log-trace", "log-debug", "log-info", "log-warn", "log-error"]
-log-debugP = ["log-debug", "log-info", "log-warn", "log-error"]
-log-infoP = ["log-info", "log-warn", "log-error"]
-log-warnP = ["log-warn", "log-error"]
-
-# logging transport
-log-rtt = ["boards/log-rtt"]
-log-semihosting = ["boards/log-semihosting"]
+# Our crates
+runner = { path = "crates/runner" }
 
 # ============================================================================
 # Patch — redirect ALL crate registry deps to vendored local copies
 # ============================================================================
 
 [patch.crates-io]
-# --- nk3 workspace components (path into nk3/nk3) ---
+# --- nk3 workspace components ---
 memory-regions = { path = "nk3/nitrokey-3-firmware/components/memory-regions" }
 apps = { path = "nk3/nitrokey-3-firmware/components/apps" }
-boards = { path = "nk3/nitrokey-3-firmware/components/boards" }
 utils = { path = "nk3/nitrokey-3-firmware/components/utils" }
 nfc-device = { path = "nk3/nitrokey-3-firmware/components/nfc-device" }
 ndef-app = { path = "nk3/nitrokey-3-firmware/components/ndef-app" }
 provisioner-app = { path = "nk3/nitrokey-3-firmware/components/provisioner-app" }
-lfs-backup = { path = "nk3/nitrokey-3-firmware/components/lfs-backup" }
-fm11nc08 = { path = "nk3/nitrokey-3-firmware/components/fm11nc08" }
 
 # --- vendored application crates ---
 admin-app = { path = "nk3/admin-app" }
 opcard = { path = "nk3/opcard-rs" }
 piv-authenticator = { path = "nk3/piv-authenticator" }
 secrets-app = { path = "nk3/trussed-secrets-app" }
-encrypted_container = { path = "nk3/trussed-secrets-app/components/encrypted_container" }
+fido-authenticator = { path = "nk3/fido-authenticator" }
+cosey = { path = "nk3/cosey" }
+ctap-types = { path = "nk3/ctap-types" }
 
-# --- vendored trussed-auth (workspace with backend + extension) ---
+# --- vendored trussed-auth ---
 trussed-auth = { path = "nk3/trussed-auth/extension" }
 trussed-auth-backend = { path = "nk3/trussed-auth/backend" }
 
-# --- vendored trussed-rsa-backend (workspace with types) ---
+# --- vendored trussed-rsa-backend ---
 trussed-rsa-alloc = { path = "nk3/trussed-rsa-backend" }
 trussed-rsa-types = { path = "nk3/trussed-rsa-backend/types" }
 
-# --- vendored trussed-staging (workspace with extensions) ---
+# --- vendored trussed-staging ---
 trussed-staging = { path = "nk3/trussed-staging" }
 trussed-chunked = { path = "nk3/trussed-staging/extensions/chunked" }
 trussed-hkdf = { path = "nk3/trussed-staging/extensions/hkdf" }
@@ -158,13 +119,15 @@ trussed-manage = { path = "nk3/trussed-staging/extensions/manage" }
 trussed-wrap-key-to-file = { path = "nk3/trussed-staging/extensions/wrap-key-to-file" }
 trussed-fs-info = { path = "nk3/trussed-staging/extensions/fs-info" }
 
-
+# --- trussed core ---
 trussed = { path = "nk3/trussed" }
 trussed-core = { path = "nk3/trussed/core" }
-trussed-se050-backend = { path = "nk3/trussed-se050-backend" }
+
+# --- unreleased libraries pinned by nitrokey-3-firmware ---
+p256-cortex-m4 = { git = "https://github.com/ycrypto/p256-cortex-m4.git", rev = "cdb31e12594b4dc1f045b860a885fdc94d96aee2" }
 
 # ============================================================================
-# Release profile — match upstream nk3
+# Release profile
 # ============================================================================
 
 [profile.release]

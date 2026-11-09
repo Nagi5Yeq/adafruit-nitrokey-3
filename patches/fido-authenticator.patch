@@ -1,0 +1,132 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index e0050bd..8874820 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -24,7 +24,7 @@ serde_bytes = { version = "0.11.14", default-features = false }
+ serde-indexed = "0.1"
+ sha2 = { version = "0.10", default-features = false }
+ trussed-chunked = { version = "0.3", optional = true }
+-trussed-core = { version = "0.2", features = ["aes256-cbc", "certificate-client", "chacha8-poly1305", "crypto-client", "ed255", "filesystem-client", "hmac-sha256", "management-client", "p256", "sha256", "ui-client"] }
++trussed-core = { version = "0.2", features = ["aes256-cbc", "certificate-client", "chacha8-poly1305", "crypto-client", "ed255", "filesystem-client", "hmac-sha256", "management-client", "p256", "p384", "sha256", "ui-client"] }
+ trussed-fs-info = "0.3"
+ trussed-hkdf = "0.4"
+ 
+diff --git a/src/ctap2.rs b/src/ctap2.rs
+index 1081079..5cebd13 100644
+--- a/src/ctap2.rs
++++ b/src/ctap2.rs
+@@ -204,6 +204,11 @@ impl<UP: UserPresence, T: TrussedRequirements> Authenticator for crate::Authenti
+                 -8 => {
+                     algorithm = Some(SigningAlgorithm::Ed25519);
+                 }
++                -35 => {
++                    if algorithm.is_none() {
++                        algorithm = Some(SigningAlgorithm::P384);
++                    }
++                }
+                 _ => {}
+             }
+         }
+diff --git a/src/ctap2/credential_management.rs b/src/ctap2/credential_management.rs
+index 1218766..e55f6bb 100644
+--- a/src/ctap2/credential_management.rs
++++ b/src/ctap2/credential_management.rs
+@@ -407,6 +407,9 @@ where
+             SigningAlgorithm::Ed25519 => PublicKey::Ed25519Key(
+                 ctap_types::serde::cbor_deserialize(&cose_public_key).unwrap(),
+             ),
++            SigningAlgorithm::P384 => {
++                PublicKey::P384Key(ctap_types::serde::cbor_deserialize(&cose_public_key).unwrap())
++            }
+         };
+         let cred_protect = match credential.cred_protect {
+             Some(x) => Some(x),
+diff --git a/src/lib.rs b/src/lib.rs
+index 2aba994..c69dc74 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -197,7 +197,7 @@ pub(crate) fn msp() -> u32 {
+     0x2000_0000
+ }
+ 
+-/// Currently Ed25519 and P256.
++/// Currently Ed25519, P256 and P384.
+ #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+ #[repr(i32)]
+ #[non_exhaustive]
+@@ -206,6 +206,8 @@ pub enum SigningAlgorithm {
+     Ed25519 = -8,
+     /// The NIST P-256 signature algorithm.
+     P256 = -7,
++    /// The NIST P-384 signature algorithm.
++    P384 = -35,
+ }
+ 
+ impl SigningAlgorithm {
+@@ -213,13 +215,14 @@ impl SigningAlgorithm {
+         match self {
+             Self::Ed25519 => Mechanism::Ed255,
+             Self::P256 => Mechanism::P256,
++            Self::P384 => Mechanism::P384,
+         }
+     }
+ 
+     pub fn signature_serialization(&self) -> SignatureSerialization {
+         match self {
+             Self::Ed25519 => SignatureSerialization::Raw,
+-            Self::P256 => SignatureSerialization::Asn1Der,
++            Self::P256 | Self::P384 => SignatureSerialization::Asn1Der,
+         }
+     }
+ 
+@@ -248,9 +251,15 @@ impl SigningAlgorithm {
+             StorageAttributes::new().set_persistence(Location::Volatile)
+         ))
+         .key;
+-        let cose_public_key =
+-            syscall!(trussed.serialize_key(mechanism, public_key, KeySerialization::Cose))
+-                .serialized_key;
++        let cose_public_key = match self {
++            Self::P384 => {
++                let raw = syscall!(trussed.serialize_key(mechanism, public_key, KeySerialization::Raw))
++                    .serialized_key;
++                p384_cose_public_key(&raw)
++            }
++            _ => syscall!(trussed.serialize_key(mechanism, public_key, KeySerialization::Cose))
++                .serialized_key,
++        };
+         if !syscall!(trussed.delete(public_key)).success {
+             error!("failed to delete credential public key");
+         }
+@@ -263,11 +272,23 @@ impl SigningAlgorithm {
+     }
+ }
+ 
++fn p384_cose_public_key(raw: &[u8]) -> SerializedKey {
++    let (x, y) = raw.split_at(raw.len() / 2);
++    let key = cosey::P384PublicKey {
++        x: x.try_into().unwrap(),
++        y: y.try_into().unwrap(),
++    };
++    let mut buffer = [0u8; 128];
++    let serialized = ctap_types::serde::cbor_serialize(&key, &mut buffer).unwrap();
++    SerializedKey::try_from(&*serialized).unwrap()
++}
++
+ impl From<SigningAlgorithm> for i32 {
+     fn from(alg: SigningAlgorithm) -> Self {
+         match alg {
+             SigningAlgorithm::P256 => -7,
+             SigningAlgorithm::Ed25519 => -8,
++            SigningAlgorithm::P384 => -35,
+         }
+     }
+ }
+@@ -279,6 +300,7 @@ impl TryFrom<i32> for SigningAlgorithm {
+         Ok(match alg {
+             -7 => SigningAlgorithm::P256,
+             -8 => SigningAlgorithm::Ed25519,
++            -35 => SigningAlgorithm::P384,
+             _ => return Err(Error::UnsupportedAlgorithm),
+         })
+     }

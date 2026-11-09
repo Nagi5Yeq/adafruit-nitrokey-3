@@ -1,0 +1,31 @@
+diff --git a/src/sizes.rs b/src/sizes.rs
+index 3f36595..d91b8ca 100644
+--- a/src/sizes.rs
++++ b/src/sizes.rs
+@@ -1,7 +1,7 @@
+ pub const AUTHENTICATOR_DATA_LENGTH: usize = 676;
+ // pub const AUTHENTICATOR_DATA_LENGTH_BYTES: usize = 512;
+ 
+-pub const ASN1_SIGNATURE_LENGTH: usize = 77;
++pub const ASN1_SIGNATURE_LENGTH: usize = 104;
+ // pub const ASN1_SIGNATURE_LENGTH_BYTES: usize = 72;
+ 
+ pub const COSE_KEY_LENGTH: usize = 256;
+diff --git a/src/webauthn.rs b/src/webauthn.rs
+index 900b019..e6d3e5d 100644
+--- a/src/webauthn.rs
++++ b/src/webauthn.rs
+@@ -158,9 +158,11 @@ pub enum UnknownPKCredentialParam {
+ pub const ES256: i32 = -7;
+ /// EdDSA
+ pub const ED_DSA: i32 = -8;
++/// ECDSA w/ SHA-384
++pub const ES384: i32 = -35;
+ 
+-pub const COUNT_KNOWN_ALGS: usize = 2;
+-pub const KNOWN_ALGS: [i32; COUNT_KNOWN_ALGS] = [ES256, ED_DSA];
++pub const COUNT_KNOWN_ALGS: usize = 3;
++pub const KNOWN_ALGS: [i32; COUNT_KNOWN_ALGS] = [ES256, ED_DSA, ES384];
+ 
+ impl TryFrom<PublicKeyCredentialParameters> for KnownPublicKeyCredentialParameters {
+     type Error = UnknownPKCredentialParam;

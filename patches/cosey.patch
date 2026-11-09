@@ -1,0 +1,204 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index 03d09cb..090d013 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -100,6 +100,7 @@ enum Alg {
+     Es256 = -7, // ECDSA with SHA-256
+     EdDsa = -8,
+     Totp = -9, // Unassigned, we use it for TOTP
++    Es384 = -35, // ECDSA with SHA-384
+ 
+     // MAC
+     // Hs256 = 5,
+@@ -126,7 +127,7 @@ impl Expected for Alg {
+ enum Crv {
+     None = 0,
+     P256 = 1,
+-    // P384 = 2,
++    P384 = 2,
+     // P512 = 3,
+     X25519 = 4,
+     // X448 = 5,
+@@ -145,6 +146,7 @@ impl Expected for Crv {
+ #[serde(untagged)]
+ pub enum PublicKey {
+     P256Key(P256PublicKey),
++    P384Key(P384PublicKey),
+     EcdhEsHkdf256Key(EcdhEsHkdf256PublicKey),
+     Ed25519Key(Ed25519PublicKey),
+     TotpKey(TotpPublicKey),
+@@ -156,6 +158,12 @@ impl From<P256PublicKey> for PublicKey {
+     }
+ }
+ 
++impl From<P384PublicKey> for PublicKey {
++    fn from(key: P384PublicKey) -> Self {
++        PublicKey::P384Key(key)
++    }
++}
++
+ impl From<EcdhEsHkdf256PublicKey> for PublicKey {
+     fn from(key: EcdhEsHkdf256PublicKey) -> Self {
+         PublicKey::EcdhEsHkdf256Key(key)
+@@ -185,21 +193,34 @@ impl TryFrom<RawPublicKey> for PublicKey {
+                 crv: Some(Crv::P256),
+                 x: Some(x),
+                 y: Some(y),
+-            } => Ok(PublicKey::P256Key(P256PublicKey { x, y })),
++            } => Ok(PublicKey::P256Key(P256PublicKey {
++                x: shrink(x)?,
++                y: shrink(y)?,
++            })),
++            RawPublicKey {
++                kty: Some(Kty::Ec2),
++                alg: Some(Alg::Es384),
++                crv: Some(Crv::P384),
++                x: Some(x),
++                y: Some(y),
++            } => Ok(PublicKey::P384Key(P384PublicKey { x, y })),
+             RawPublicKey {
+                 kty: Some(Kty::Ec2),
+                 alg: Some(Alg::EcdhEsHkdf256),
+                 crv: Some(Crv::P256),
+                 x: Some(x),
+                 y: Some(y),
+-            } => Ok(PublicKey::EcdhEsHkdf256Key(EcdhEsHkdf256PublicKey { x, y })),
++            } => Ok(PublicKey::EcdhEsHkdf256Key(EcdhEsHkdf256PublicKey {
++                x: shrink(x)?,
++                y: shrink(y)?,
++            })),
+             RawPublicKey {
+                 kty: Some(Kty::Okp),
+                 alg: Some(Alg::EdDsa),
+                 crv: Some(Crv::Ed25519),
+                 x: Some(x),
+                 y: None,
+-            } => Ok(PublicKey::Ed25519Key(Ed25519PublicKey { x })),
++            } => Ok(PublicKey::Ed25519Key(Ed25519PublicKey { x: shrink(x)? })),
+             RawPublicKey {
+                 kty: Some(Kty::Symmetric),
+                 alg: Some(Alg::Totp),
+@@ -217,8 +238,8 @@ struct RawPublicKey {
+     kty: Option<Kty>,
+     alg: Option<Alg>,
+     crv: Option<Crv>,
+-    x: Option<Bytes<32>>,
+-    y: Option<Bytes<32>>,
++    x: Option<Bytes<48>>,
++    y: Option<Bytes<48>>,
+ }
+ 
+ impl<'de> Deserialize<'de> for RawPublicKey {
+@@ -372,6 +393,31 @@ impl From<P256PublicKey> for RawPublicKey {
+             kty: Some(P256PublicKey::KTY),
+             alg: Some(P256PublicKey::ALG),
+             crv: Some(P256PublicKey::CRV),
++            x: Some(key.x.increase_capacity()),
++            y: Some(key.y.increase_capacity()),
++        }
++    }
++}
++
++#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
++#[serde(into = "RawPublicKey")]
++pub struct P384PublicKey {
++    pub x: Bytes<48>,
++    pub y: Bytes<48>,
++}
++
++impl PublicKeyConstants for P384PublicKey {
++    const KTY: Kty = Kty::Ec2;
++    const ALG: Alg = Alg::Es384;
++    const CRV: Crv = Crv::P384;
++}
++
++impl From<P384PublicKey> for RawPublicKey {
++    fn from(key: P384PublicKey) -> Self {
++        Self {
++            kty: Some(P384PublicKey::KTY),
++            alg: Some(P384PublicKey::ALG),
++            crv: Some(P384PublicKey::CRV),
+             x: Some(key.x),
+             y: Some(key.y),
+         }
+@@ -397,8 +443,8 @@ impl From<EcdhEsHkdf256PublicKey> for RawPublicKey {
+             kty: Some(EcdhEsHkdf256PublicKey::KTY),
+             alg: Some(EcdhEsHkdf256PublicKey::ALG),
+             crv: Some(EcdhEsHkdf256PublicKey::CRV),
+-            x: Some(key.x),
+-            y: Some(key.y),
++            x: Some(key.x.increase_capacity()),
++            y: Some(key.y.increase_capacity()),
+         }
+     }
+ }
+@@ -421,7 +467,7 @@ impl From<Ed25519PublicKey> for RawPublicKey {
+             kty: Some(Ed25519PublicKey::KTY),
+             alg: Some(Ed25519PublicKey::ALG),
+             crv: Some(Ed25519PublicKey::CRV),
+-            x: Some(key.x),
++            x: Some(key.x.increase_capacity()),
+             y: None,
+         }
+     }
+@@ -454,6 +500,11 @@ pub struct X25519PublicKey {
+     pub pub_key: Bytes<32>,
+ }
+ 
++fn shrink<const N: usize, E: serde::de::Error>(bytes: Bytes<48>) -> Result<Bytes<N>, E> {
++    Bytes::try_from(bytes.as_slice())
++        .map_err(|_| E::invalid_length(bytes.len(), &"a shorter coordinate"))
++}
++
+ fn check_key_constants<K: PublicKeyConstants, E: serde::de::Error>(
+     kty: Option<Kty>,
+     alg: Option<Alg>,
+@@ -492,6 +543,28 @@ impl<'de> serde::Deserialize<'de> for P256PublicKey {
+         check_key_constants::<P256PublicKey, D::Error>(kty, alg, crv)?;
+         let x = x.ok_or_else(|| D::Error::missing_field("x"))?;
+         let y = y.ok_or_else(|| D::Error::missing_field("y"))?;
++        Ok(Self {
++            x: shrink(x)?,
++            y: shrink(y)?,
++        })
++    }
++}
++
++impl<'de> serde::Deserialize<'de> for P384PublicKey {
++    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
++    where
++        D: serde::Deserializer<'de>,
++    {
++        let RawPublicKey {
++            kty,
++            alg,
++            crv,
++            x,
++            y,
++        } = RawPublicKey::deserialize(deserializer)?;
++        check_key_constants::<P384PublicKey, D::Error>(kty, alg, crv)?;
++        let x = x.ok_or_else(|| D::Error::missing_field("x"))?;
++        let y = y.ok_or_else(|| D::Error::missing_field("y"))?;
+         Ok(Self { x, y })
+     }
+ }
+@@ -511,7 +584,10 @@ impl<'de> serde::Deserialize<'de> for EcdhEsHkdf256PublicKey {
+         check_key_constants::<EcdhEsHkdf256PublicKey, D::Error>(kty, alg, crv)?;
+         let x = x.ok_or_else(|| D::Error::missing_field("x"))?;
+         let y = y.ok_or_else(|| D::Error::missing_field("y"))?;
+-        Ok(Self { x, y })
++        Ok(Self {
++            x: shrink(x)?,
++            y: shrink(y)?,
++        })
+     }
+ }
+ 
+@@ -525,6 +601,6 @@ impl<'de> serde::Deserialize<'de> for Ed25519PublicKey {
+         } = RawPublicKey::deserialize(deserializer)?;
+         check_key_constants::<Ed25519PublicKey, D::Error>(kty, alg, crv)?;
+         let x = x.ok_or_else(|| D::Error::missing_field("x"))?;
+-        Ok(Self { x })
++        Ok(Self { x: shrink(x)? })
+     }
+ }

@@ -4,7 +4,7 @@
 //! on the Adafruit board with two hardware differences vs NK3AM:
 //!
 //!   1. No SE050 — all crypto falls back to software backends.
-//!   2. No external SPI flash — EFS is RAM-backed (simulated_efs=true).
+//!   2. No external SPI flash — EFS is the `/external` directory of the internal filesystem.
 
 #![no_std]
 #![no_main]
@@ -12,9 +12,12 @@
 #[cfg(feature = "alloc")]
 extern crate embedded_alloc;
 
-mod board;
-
 delog::generate_macros!();
+
+mod board;
+mod flash;
+mod monotonic;
+mod soc;
 
 use cortex_m_rt::{exception, ExceptionFrame};
 use utils::Version;
@@ -34,27 +37,36 @@ pub fn init_alloc() {
     unsafe { ALLOCATOR.init(&raw mut HEAP as usize, HEAP_SIZE) }
 }
 
+static FLUSHER: runner::init::DelogFlusher = runner::init::DelogFlusher {
+    flush_fn: |_msg| {
+        #[cfg(feature = "log-rtt")]
+        rtt_target::rprint!(_msg);
+    },
+};
+
 #[rtic::app(device = nrf52840_hal::pac, peripherals = true, dispatchers = [SWI3_EGU3, SWI4_EGU4, SWI5_EGU5])]
 mod app {
     use apdu_dispatch::{dispatch::ApduDispatch, interchanges::Channel as CcidChannel};
-    use apps::{Endpoints, Reboot};
-    use boards::{
-        init::{CtaphidDispatch, Resources, UsbClasses},
-        runtime,
-        soc::nrf52::{self, rtic_monotonic::RtcDuration, Nrf52},
-        store, Apps, Trussed,
-    };
+    use apps::Endpoints;
     use interchange::Channel;
     use nrf52840_hal::{
         gpiote::Gpiote,
         rng::Rng,
         wdt::{self, handles::Hdl0, WatchdogHandle},
     };
+    use runner::{
+        init::{CtaphidDispatch, Resources, UsbClasses},
+        runtime, store, Apps, Soc as _, Trussed,
+    };
 
-    use crate::board::{self, AdafruitNRF52840, ExternalFlashStorage, InternalFlashStorage};
+    use crate::{
+        board::{self, AdafruitNRF52840, PersistentFlashStorage},
+        monotonic::RtcDuration,
+        soc::{self, Nrf52},
+    };
 
     type Board = AdafruitNRF52840;
-    type Soc = <Board as boards::Board>::Soc;
+    type Soc = <Board as runner::Board>::Soc;
 
     #[shared]
     struct SharedResources {
@@ -74,7 +86,7 @@ mod app {
     }
 
     #[monotonic(binds = RTC0, default = true)]
-    type RtcMonotonic = nrf52::rtic_monotonic::RtcMonotonic;
+    type RtcMonotonic = crate::monotonic::RtcMonotonic;
 
     #[init(local = [resources: Resources<Board> = Resources::new()])]
     fn init(mut ctx: init::Context) -> (SharedResources, LocalResources, init::Monotonics) {
@@ -86,45 +98,43 @@ mod app {
         ctx.core.DCB.enable_trace();
         ctx.core.DWT.enable_cycle_counter();
 
-        boards::init::init_logger::<Board>(crate::VERSION_STRING);
+        #[cfg(feature = "log-rtt")]
+        rtt_target::rtt_init_print!();
 
-        let reset_reason = nrf52::reset_reason(&ctx.device.POWER.resetreas);
+        runner::init::init_logger::<Board>(&crate::FLUSHER, crate::VERSION_STRING);
+
+        let reset_reason = soc::reset_reason(&ctx.device.POWER.resetreas);
         debug_now!("Reset Reason: {reset_reason:?}");
 
         if reset_reason.dog && !reset_reason.sreq {
             Nrf52::reboot_to_firmware_update();
         }
 
-        let soc = nrf52::init_bootup(&ctx.device.FICR, &ctx.device.UICR);
+        let soc = soc::init_bootup(&ctx.device.FICR, &ctx.device.UICR);
+        let board = AdafruitNRF52840::new(soc);
 
-        let wdt_parts = nrf52::init_watchdog(ctx.device.WDT);
+        let wdt_parts = soc::init_watchdog(ctx.device.WDT);
 
-        let board_gpio =
-            board::init_pins(ctx.device.GPIOTE, ctx.device.P0, ctx.device.P1);
+        let board_gpio = board::init_pins(ctx.device.GPIOTE, ctx.device.P0, ctx.device.P1);
 
-        let usb_bus = nrf52::setup_usb_bus(
+        let usb_bus = soc::setup_usb_bus(
             &mut ctx.local.resources.board,
             ctx.device.CLOCK,
             ctx.device.USBD,
         );
 
-        let internal_flash = InternalFlashStorage::new(ctx.device.NVMC);
-        // EFS uses a second flash region on the same NRF52840 internal flash.
-        // NVMC is a singleton, so we steal a second reference.
-        let nvmc2 = unsafe { nrf52840_pac::Peripherals::steal().NVMC };
-        let external_flash = ExternalFlashStorage::new(nvmc2);
+        let persistent_flash = PersistentFlashStorage::new(ctx.device.NVMC);
         let store = store::init_store(
             &mut ctx.local.resources.store,
-            internal_flash,
-            external_flash,
-            false, // real flash-backed EFS (second region of internal NRF52840 flash)
+            persistent_flash,
             &mut init_status,
         );
 
         static NFC_CHANNEL: CcidChannel = Channel::new();
         let (_nfc_rq, nfc_rp) = NFC_CHANNEL.split().unwrap();
-        let usb_nfc = boards::init::init_usb_nfc(
+        let usb_nfc = runner::init::init_usb_nfc(
             &mut ctx.local.resources.usb,
+            || {},
             Some(usb_bus),
             None, // no NFC hardware
             nfc_rp,
@@ -134,27 +144,24 @@ mod app {
         );
 
         let user_interface = board::init_ui(
-            board_gpio.rgb_led,
-            ctx.device.PWM0,
-            ctx.device.PWM1,
-            ctx.device.PWM2,
-            board_gpio.touch,
+            board_gpio.neopixel,
+            board_gpio.neopixel_power,
+            board_gpio.red_led,
+            board_gpio.blue_led,
+            board_gpio.button,
         );
 
         let mut dev_rng = Rng::new(ctx.device.RNG);
         let hw_key = board::hw_key(&ctx.device.FICR);
-        let mut trussed = boards::init::init_trussed(
+        let mut trussed = runner::init::init_trussed(
             &mut dev_rng,
             store,
             user_interface,
-            &mut init_status,
             Some(&hw_key),
-            #[cfg(feature = "se050")]
-            None::<((), ())>,
         );
 
-        let (apps, endpoints) = boards::init::init_apps(
-            &soc,
+        let (apps, endpoints) = runner::init::init_apps(
+            &board,
             &mut trussed,
             init_status,
             &store,
@@ -209,7 +216,7 @@ mod app {
             }
 
             #[cfg(not(feature = "no-delog"))]
-            boards::init::Delogger::flush();
+            runner::init::Delogger::flush();
 
             let (usb_activity, _nfc_activity) =
                 (&mut apps, &mut apdu_dispatch, &mut ctaphid_dispatch)
@@ -298,10 +305,14 @@ mod app {
 #[inline(never)]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    boards::handle_panic::<board::AdafruitNRF52840>(info)
+    runner::handle_panic::<board::AdafruitNRF52840>(info)
 }
 
 #[exception]
-unsafe fn HardFault(ef: &ExceptionFrame) -> ! {
-    boards::handle_hard_fault::<board::AdafruitNRF52840>(ef)
+unsafe fn HardFault(_ef: &ExceptionFrame) -> ! {
+    use runner::ui::rgb_led::RgbLed;
+    board::AdafruitLed::set_panic_led();
+    loop {
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    }
 }

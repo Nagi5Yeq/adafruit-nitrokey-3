@@ -1,0 +1,56 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - toolchain: llvm
+            cc: clang
+            cflags: --sysroot=/usr/lib/arm-none-eabi
+          - toolchain: gcc
+            cc: arm-none-eabi-gcc
+            cflags: ""
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm clang libclang-dev gcc-arm-none-eabi libc6-dev-i386
+
+      - name: Install Rust target
+        run: |
+          rustup toolchain install stable --profile minimal --target thumbv7em-none-eabihf
+          rustup default stable
+          rustc --version
+
+      - name: Build
+        env:
+          CC_thumbv7em_none_eabihf: ${{ matrix.cc }}
+          CFLAGS_thumbv7em_none_eabihf: ${{ matrix.cflags }}
+        run: ./build.sh
+
+      - name: Size
+        run: arm-none-eabi-size target/thumbv7em-none-eabihf/release/board-adafruit-nrf52840
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: board-adafruit-nrf52840-${{ matrix.toolchain }}
+          path: target/thumbv7em-none-eabihf/release/board-adafruit-nrf52840
+          if-no-files-found: error

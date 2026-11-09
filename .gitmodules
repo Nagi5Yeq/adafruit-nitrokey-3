@@ -4,9 +4,6 @@
 [submodule "nk3/trussed"]
 	path = nk3/trussed
 	url = https://github.com/trussed-dev/trussed.git
-[submodule "nk3/admin-app"]
-	path = nk3/admin-app
-	url = https://github.com/Nitrokey/admin-app.git
 [submodule "nk3/opcard-rs"]
 	path = nk3/opcard-rs
 	url = https://github.com/Nitrokey/opcard-rs
@@ -22,9 +19,18 @@
 [submodule "nk3/trussed-rsa-backend"]
 	path = nk3/trussed-rsa-backend
 	url = https://github.com/trussed-dev/trussed-rsa-backend.git
-[submodule "nk3/trussed-se050-backend"]
-	path = nk3/trussed-se050-backend
-	url = https://github.com/Nitrokey/trussed-se050-backend.git
 [submodule "nk3/trussed-staging"]
 	path = nk3/trussed-staging
 	url = https://github.com/trussed-dev/trussed-staging.git
+[submodule "nk3/admin-app"]
+	path = nk3/admin-app
+	url = https://github.com/trussed-dev/admin-app.git
+[submodule "nk3/fido-authenticator"]
+	path = nk3/fido-authenticator
+	url = https://github.com/trussed-dev/fido-authenticator.git
+[submodule "nk3/cosey"]
+	path = nk3/cosey
+	url = https://github.com/ycrypto/cosey.git
+[submodule "nk3/ctap-types"]
+	path = nk3/ctap-types
+	url = https://github.com/trussed-dev/ctap-types.git

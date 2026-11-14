@@ -47,7 +47,6 @@ static FLUSHER: runner::init::DelogFlusher = runner::init::DelogFlusher {
 #[rtic::app(device = nrf52840_hal::pac, peripherals = true, dispatchers = [SWI3_EGU3, SWI4_EGU4, SWI5_EGU5])]
 mod app {
     use apdu_dispatch::{dispatch::ApduDispatch, interchanges::Channel as CcidChannel};
-    use apps::Endpoints;
     use interchange::Channel;
     use nrf52840_hal::{
         gpiote::Gpiote,
@@ -56,7 +55,7 @@ mod app {
     };
     use runner::{
         init::{CtaphidDispatch, Resources, UsbClasses},
-        runtime, store, Apps, Soc as _, Trussed,
+        runtime, store, Apps, Endpoints, Soc as _, Trussed,
     };
 
     use crate::{
@@ -138,8 +137,8 @@ mod app {
             Some(usb_bus),
             None, // no NFC hardware
             nfc_rp,
-            "Nitrokey 3",     // USB product string
-            0x42B2,           // USB product ID
+            "Nitrokey 3", // USB product string
+            0x42B2,       // USB product ID
             crate::VERSION,
         );
 
@@ -153,12 +152,8 @@ mod app {
 
         let mut dev_rng = Rng::new(ctx.device.RNG);
         let hw_key = board::hw_key(&ctx.device.FICR);
-        let mut trussed = runner::init::init_trussed(
-            &mut dev_rng,
-            store,
-            user_interface,
-            Some(&hw_key),
-        );
+        let mut trussed =
+            runner::init::init_trussed(&mut dev_rng, store, user_interface, Some(&hw_key));
 
         let (apps, endpoints) = runner::init::init_apps(
             &board,
@@ -311,8 +306,5 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 #[exception]
 unsafe fn HardFault(_ef: &ExceptionFrame) -> ! {
     use runner::ui::rgb_led::RgbLed;
-    board::AdafruitLed::set_panic_led();
-    loop {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
+    board::AdafruitLed::panic_loop()
 }

@@ -1,12 +1,10 @@
 use apdu_dispatch::dispatch::{ApduDispatch, Interface};
-use apps::Endpoints;
 use embedded_time::duration::Milliseconds;
 use nfc_device::{traits::nfc::Device as NfcDevice, Iso14443};
 
 use crate::{
     init::{CtaphidDispatch, UsbClasses},
-    Soc,
-    ui, Apps, Board, Trussed,
+    ui, Apps, Board, Endpoints, Soc, Trussed,
 };
 
 pub fn poll_dispatchers<B: Board>(
@@ -124,5 +122,6 @@ where
 }
 
 pub fn run_trussed<B: Board>(trussed: &mut Trussed<B>, endpoints: &mut Endpoints) {
-    trussed.process(endpoints);
+    trussed.process(&mut endpoints.nk3);
+    trussed.process(&mut endpoints.gids);
 }

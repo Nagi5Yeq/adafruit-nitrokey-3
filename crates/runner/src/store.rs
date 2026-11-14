@@ -342,10 +342,8 @@ mod tests {
             write_file(&ifs, path!("/fido/dat"), path!("state"));
             write_file(&efs, path!("/piv/dat"), path!("state"));
 
-            efs.remove_dir_all_where(path!("/"), &|entry| {
-                entry.path() == path!("/piv/dat/state")
-            })
-            .unwrap();
+            efs.remove_dir_all_where(path!("/"), &|entry| entry.path() == path!("/piv/dat/state"))
+                .unwrap();
             assert!(!efs.exists(path!("/piv/dat/state")));
             assert!(ifs.exists(path!("/fido/dat/state")));
 

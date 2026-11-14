@@ -928,6 +928,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "gids"
+version = "1.9.1"
+dependencies = [
+ "apdu-app",
+ "des",
+ "heapless 0.9.3",
+ "iso7816",
+ "p256",
+ "p384",
+ "rand_chacha",
+ "rsa",
+ "sha-1",
+ "trussed",
+ "trussed-auth",
+ "trussed-auth-backend",
+ "trussed-chunked",
+ "trussed-core",
+ "trussed-rsa-alloc",
+ "trussed-staging",
+]
+
+[[package]]
 name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2007,6 +2029,8 @@ dependencies = [
  "ctaphid-dispatch",
  "delog",
  "embedded-time",
+ "gids",
+ "heapless 0.9.3",
  "interchange",
  "littlefs2",
  "littlefs2-core",
@@ -2726,11 +2750,13 @@ dependencies = [
 name = "trussed-staging"
 version = "0.5.0"
 dependencies = [
+ "aead",
  "chacha20poly1305",
  "delog",
  "digest",
  "heapless 0.9.3",
  "heapless-bytes",
+ "hex-literal 0.4.1",
  "hkdf",
  "littlefs2-core",
  "rand_core",
@@ -2743,6 +2769,7 @@ dependencies = [
  "trussed-core",
  "trussed-fs-info",
  "trussed-hkdf",
+ "trussed-hpke",
  "trussed-manage",
  "trussed-wrap-key-to-file",
 ]

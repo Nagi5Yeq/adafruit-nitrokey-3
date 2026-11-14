@@ -4,17 +4,18 @@ use apdu_dispatch::{
 };
 #[cfg(feature = "trussed-auth")]
 use apps::AUTH_LOCATION;
-use apps::{AdminData, ClientBuilder, Data, Dispatch, Endpoints, FidoData, InitStatus};
+use apps::{AdminData, Backend, ClientBuilder, Data, Dispatch, Endpoint, FidoData, InitStatus};
 
 use ctaphid_dispatch::Channel as CtapChannel;
 #[cfg(not(feature = "no-delog"))]
 use delog::delog;
 use interchange::Channel;
+use littlefs2_core::path;
 use nfc_device::Iso14443;
 use rand::{CryptoRng, Rng as _, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use ref_swap::OptionRefSwap;
-use trussed::store::Store as _;
+use trussed::{backend::BackendId, pipe::TrussedChannel, store::Store as _, types::CoreContext};
 use trussed_core::InterruptFlag;
 use usb_device::{
     bus::UsbBusAllocator,
@@ -26,8 +27,8 @@ use usbd_ctaphid::CtapHid;
 use utils::Version;
 
 use crate::{
-    Soc, store::StoreResources, Apps, Board, Runner, RunnerPlatform, RunnerStore, Trussed,
-    ui::UserInterface,
+    store::StoreResources, ui::UserInterface, Apps, Board, Endpoints, GidsClient, Runner,
+    RunnerPlatform, RunnerStore, Soc, Trussed,
 };
 
 // This is not the theoretical maximum but a realistic upper bound to reduce stack usage.
@@ -252,9 +253,34 @@ pub fn init_apps<B: Board>(
     };
 
     let mut client_builder = ClientBuilder::new(Default::default());
-    let apps = Apps::new(&runner, trussed, &mut client_builder, data);
-    let endpoints = client_builder.into_endpoints();
+    let nk3 = apps::Apps::new(&runner, trussed, &mut client_builder, data);
+    let (gids_client, gids_endpoint) = init_gids_client::<B>();
+    let apps = Apps {
+        nk3,
+        gids: gids::Gids::new(gids_client),
+    };
+    let endpoints = Endpoints {
+        nk3: client_builder.into_endpoints(),
+        gids: [gids_endpoint],
+    };
     (apps, endpoints)
+}
+
+const GIDS_BACKENDS: &[BackendId<Backend>] = &[
+    BackendId::Custom(Backend::SoftwareRsa),
+    #[cfg(feature = "trussed-auth")]
+    BackendId::Custom(Backend::Auth),
+    BackendId::Custom(Backend::Staging),
+    BackendId::Core,
+];
+
+fn init_gids_client<B: Board>() -> (GidsClient<B>, Endpoint) {
+    static CHANNEL: TrussedChannel = TrussedChannel::new();
+    let (requester, responder) = CHANNEL.split().unwrap();
+    let context = CoreContext::new(path!("gids").into());
+    let endpoint = Endpoint::new(responder, context, GIDS_BACKENDS);
+    let client = GidsClient::<B>::new(requester, Default::default(), None);
+    (client, endpoint)
 }
 
 pub fn init_trussed<B: Board, R: CryptoRng + RngCore>(

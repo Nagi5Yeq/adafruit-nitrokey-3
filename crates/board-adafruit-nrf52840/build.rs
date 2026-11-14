@@ -16,7 +16,10 @@ fn main() {
         std::fs::read_to_string(ld_dir.join("nrf52-memory-template.x")).expect("read template");
     let memory_x = template
         .replace("##FLASH_BASE##", &format!("{:#X}", FLASH_BASE))
-        .replace("##FLASH_LENGTH##", &format!("{:#X}", FLASH_END - FLASH_BASE))
+        .replace(
+            "##FLASH_LENGTH##",
+            &format!("{:#X}", FLASH_END - FLASH_BASE),
+        )
         .replace("##FS_BASE##", &format!("{:#X}", FS_BASE))
         .replace("##FS_LENGTH##", &format!("{:#X}", FS_END - FS_BASE));
     std::fs::write(out_dir.join("custom_memory.x"), memory_x).expect("write custom_memory.x");

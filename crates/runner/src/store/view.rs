@@ -308,8 +308,8 @@ impl DynFilesystem for ExternalFs<'_> {
         let absolute = is_absolute(path);
         self.fs
             .read_dir_and_then_unit(&to_external(path)?, &mut |entries| {
-                let mut entries =
-                    entries.map(|entry| entry.and_then(|entry| entry_from_external(entry, absolute)));
+                let mut entries = entries
+                    .map(|entry| entry.and_then(|entry| entry_from_external(entry, absolute)));
                 f(&mut entries)
             })
     }

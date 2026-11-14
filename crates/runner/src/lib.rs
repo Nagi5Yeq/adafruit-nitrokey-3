@@ -93,9 +93,44 @@ pub trait Board {
 // Type aliases
 // ---------------------------------------------------------------------------
 
-pub type Trussed<B> =
-    trussed::Service<RunnerPlatform<B>, Dispatch>;
-pub type Apps<B> = apps::Apps<Runner<B>>;
+pub type Trussed<B> = trussed::Service<RunnerPlatform<B>, Dispatch>;
+
+pub type GidsClient<B> =
+    trussed::ClientImplementation<'static, <<B as Board>::Soc as Soc>::Syscall, Dispatch>;
+
+pub struct Apps<B: Board> {
+    pub nk3: apps::Apps<Runner<B>>,
+    pub gids: gids::Gids<GidsClient<B>>,
+}
+
+impl<B: Board> Apps<B> {
+    pub fn apdu_dispatch<F, T>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&mut [&mut dyn apdu_dispatch::App]) -> T,
+    {
+        let gids = &mut self.gids;
+        self.nk3.apdu_dispatch(|nk3_apps| {
+            let mut all: heapless::Vec<&mut dyn apdu_dispatch::App, 8> = heapless::Vec::new();
+            for app in nk3_apps.iter_mut() {
+                all.push(&mut **app).ok().unwrap();
+            }
+            all.push(gids).ok().unwrap();
+            f(&mut all)
+        })
+    }
+
+    pub fn ctaphid_dispatch<F, T>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&mut [&mut dyn ctaphid_dispatch::app::App<'static>]) -> T,
+    {
+        self.nk3.ctaphid_dispatch(f)
+    }
+}
+
+pub struct Endpoints {
+    pub nk3: apps::Endpoints,
+    pub gids: [apps::Endpoint; 1],
+}
 
 // ---------------------------------------------------------------------------
 // Runner — implements apps::Runner
@@ -161,8 +196,5 @@ impl<B: Board> Platform for RunnerPlatform<B> {
 
 pub fn handle_panic<B: Board>(_info: &core::panic::PanicInfo) -> ! {
     error_now!("{}", _info);
-    B::Led::set_panic_led();
-    loop {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
+    B::Led::panic_loop()
 }

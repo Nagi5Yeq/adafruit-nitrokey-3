@@ -8,31 +8,16 @@ use trussed::{platform, types::ui};
 use trussed_core::types::consent;
 
 use buttons::UserPresence;
-use rgb_led::{Intensities, RgbLed};
+use rgb_led::{Indicator, RgbLed};
 
 pub mod buttons;
 pub mod rgb_led;
 
-const BLACK: Intensities = Intensities {
-    red: 0,
-    green: 0,
-    blue: 0,
-};
-const RED: Intensities = Intensities {
-    red: u8::MAX,
-    green: 0,
-    blue: 0,
-};
-const TEAL: Intensities = Intensities {
-    red: 0,
-    green: u8::MAX,
-    blue: 0x5a,
-};
-const WHITE: Intensities = Intensities {
-    red: u8::MAX,
-    green: u8::MAX,
-    blue: u8::MAX,
-};
+const BLINK_PERIOD_MS: u128 = 500;
+
+fn blink(start: Duration, uptime: Duration) -> bool {
+    uptime.saturating_sub(start).as_millis() % BLINK_PERIOD_MS < BLINK_PERIOD_MS / 2
+}
 
 static WAITING: AtomicBool = AtomicBool::new(false);
 
@@ -86,8 +71,8 @@ impl<C: Clock, P: UserPresence, L: RgbLed> UserInterface<C, P, L> {
         }
         if let Some(rgb) = &mut self.rgb {
             self.status.refresh(uptime);
-            let mode = self.status.led_mode(self.provisioner);
-            rgb.set(mode.color(uptime));
+            let (indicator, lit) = self.status.indicator(self.provisioner, uptime);
+            rgb.show(indicator, lit);
         }
     }
 }
@@ -129,12 +114,11 @@ impl<C: Clock, P: UserPresence, L: RgbLed> platform::UserInterface for UserInter
 pub struct CustomStatus(apps::CustomStatus);
 
 impl CustomStatus {
-    fn led_mode(&self, start: Duration) -> LedMode {
-        let color = match self.0 {
-            apps::CustomStatus::ReverseHotpSuccess => TEAL,
-            apps::CustomStatus::ReverseHotpError => RED,
-        };
-        LedMode::simple_blinking(color, start)
+    fn indicator(&self) -> Indicator {
+        match self.0 {
+            apps::CustomStatus::ReverseHotpSuccess => Indicator::Success,
+            apps::CustomStatus::ReverseHotpError => Indicator::Error,
+        }
     }
 
     fn allow_update(&self) -> bool {
@@ -203,21 +187,16 @@ impl Status {
         }
     }
 
-    pub fn led_mode(&self, is_provisioner: bool) -> LedMode {
+    pub fn indicator(&self, is_provisioner: bool, uptime: Duration) -> (Indicator, bool) {
         match self {
-            Self::Startup(_) => LedMode::constant(WHITE),
-            Self::Idle => {
-                if is_provisioner {
-                    LedMode::constant(WHITE)
-                } else {
-                    LedMode::constant(BLACK)
-                }
-            }
-            Self::Processing => LedMode::constant(TEAL),
-            Self::WaitingForUserPresence(start) => LedMode::simple_blinking(WHITE, *start),
-            Self::Error => LedMode::constant(RED),
-            Self::Winking(range) => LedMode::simple_blinking(WHITE, range.start),
-            Self::Custom { status, start } => status.led_mode(*start),
+            Self::Startup(_) => (Indicator::Startup, true),
+            Self::Idle if is_provisioner => (Indicator::Provisioner, true),
+            Self::Idle => (Indicator::Off, false),
+            Self::Processing => (Indicator::Processing, true),
+            Self::WaitingForUserPresence(start) => (Indicator::UserPresence, blink(*start, uptime)),
+            Self::Error => (Indicator::Error, true),
+            Self::Winking(range) => (Indicator::Wink, blink(range.start, uptime)),
+            Self::Custom { status, start } => (status.indicator(), blink(*start, uptime)),
         }
     }
 }
@@ -246,58 +225,94 @@ impl From<(ui::Status, Duration)> for Status {
     }
 }
 
-pub enum LedMode {
-    Constant {
-        color: Intensities,
-    },
-    Blinking {
-        on_color: Intensities,
-        off_color: Intensities,
-        period: Duration,
-        start: Duration,
-    },
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl LedMode {
-    pub fn constant(color: Intensities) -> Self {
-        Self::Constant { color }
+    const fn ms(value: u64) -> Duration {
+        Duration::from_millis(value)
     }
 
-    pub fn blinking(
-        on_color: Intensities,
-        off_color: Intensities,
-        period: Duration,
-        start: Duration,
-    ) -> Self {
-        Self::Blinking {
-            on_color,
-            off_color,
-            period,
-            start,
-        }
+    #[test]
+    fn startup_then_idle() {
+        let mut status = Status::Startup(ms(0));
+        assert_eq!(status.indicator(false, ms(0)), (Indicator::Startup, true));
+        status.update(ui::Status::Idle, ms(100));
+        assert_eq!(status.indicator(false, ms(100)), (Indicator::Startup, true));
+        status.refresh(ms(600));
+        assert_eq!(status.indicator(false, ms(600)), (Indicator::Off, false));
+        assert_eq!(
+            status.indicator(true, ms(600)),
+            (Indicator::Provisioner, true)
+        );
     }
 
-    pub fn simple_blinking(color: Intensities, start: Duration) -> Self {
-        Self::blinking(color, BLACK, Duration::from_millis(500), start)
+    #[test]
+    fn processing_and_error_are_constant() {
+        let mut status = Status::Idle;
+        status.update(ui::Status::Processing, ms(1000));
+        assert_eq!(
+            status.indicator(false, ms(1300)),
+            (Indicator::Processing, true)
+        );
+        status.update(ui::Status::Error, ms(2000));
+        assert_eq!(status.indicator(false, ms(2300)), (Indicator::Error, true));
     }
 
-    pub fn color(&self, uptime: Duration) -> Intensities {
-        match self {
-            Self::Constant { color } => *color,
-            Self::Blinking {
-                on_color,
-                off_color,
-                period,
-                start,
-            } => {
-                let delta = (uptime - *start).as_millis() % period.as_millis();
-                let is_on = delta < period.as_millis() / 2;
-                if is_on {
-                    *on_color
-                } else {
-                    *off_color
-                }
-            }
-        }
+    #[test]
+    fn user_presence_blinks() {
+        let mut status = Status::Idle;
+        status.update(ui::Status::WaitingForUserPresence, ms(1000));
+        assert_eq!(
+            status.indicator(false, ms(1000)),
+            (Indicator::UserPresence, true)
+        );
+        assert_eq!(
+            status.indicator(false, ms(1300)),
+            (Indicator::UserPresence, false)
+        );
+        assert_eq!(
+            status.indicator(false, ms(1500)),
+            (Indicator::UserPresence, true)
+        );
+    }
+
+    #[test]
+    fn wink_blinks_until_its_end() {
+        let mut status = Status::Winking(ms(1000)..ms(3000));
+        assert_eq!(status.indicator(false, ms(1100)), (Indicator::Wink, true));
+        assert_eq!(status.indicator(false, ms(1350)), (Indicator::Wink, false));
+        status.update(ui::Status::Idle, ms(2000));
+        assert_eq!(status.indicator(false, ms(2000)).0, Indicator::Wink);
+        status.refresh(ms(3100));
+        assert_eq!(status.indicator(false, ms(3100)), (Indicator::Off, false));
+    }
+
+    #[test]
+    fn reverse_hotp_statuses() {
+        let mut status = Status::Custom {
+            status: apps::CustomStatus::ReverseHotpSuccess.into(),
+            start: ms(0),
+        };
+        assert_eq!(status.indicator(false, ms(0)), (Indicator::Success, true));
+        status.update(ui::Status::Idle, ms(100));
+        assert_eq!(status.indicator(false, ms(100)).0, Indicator::Success);
+        status.refresh(ms(10_100));
+        assert_eq!(status.indicator(false, ms(10_100)), (Indicator::Off, false));
+
+        let mut status = Status::Custom {
+            status: apps::CustomStatus::ReverseHotpError.into(),
+            start: ms(0),
+        };
+        status.update(ui::Status::Idle, ms(100));
+        status.refresh(ms(60_000));
+        assert_eq!(
+            status.indicator(false, ms(60_000)),
+            (Indicator::Error, true)
+        );
+        assert_eq!(
+            status.indicator(false, ms(60_300)),
+            (Indicator::Error, false)
+        );
     }
 }

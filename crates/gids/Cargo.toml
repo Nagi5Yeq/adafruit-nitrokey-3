@@ -1,0 +1,25 @@
+[package]
+name = "gids"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+apdu-app = "0.2"
+heapless = "0.9"
+iso7816 = "0.2"
+trussed-auth = "0.5"
+trussed-chunked = "0.3"
+sha1 = { package = "sha-1", version = "0.10", default-features = false }
+trussed-core = { workspace = true, features = ["crypto-client", "filesystem-client", "ui-client", "p256", "p384", "rsa2048", "rsa3072", "rsa4096", "tdes"] }
+
+[dev-dependencies]
+des = "0.8"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+rand_chacha = { workspace = true }
+rsa = { version = "0.9", default-features = false, features = ["sha2"] }
+trussed = { workspace = true, features = ["virt", "serde-extensions", "tdes"] }
+trussed-auth-backend = "0.2"
+trussed-rsa-alloc = { version = "0.5", features = ["raw"] }
+trussed-staging = { version = "0.5", features = ["chunked"] }

@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 apps = { workspace = true }
+gids = { workspace = true }
+heapless = "0.9"
 utils = { workspace = true, features = ["storage"] }
 trussed = { workspace = true }
 trussed-core = { workspace = true }

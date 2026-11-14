@@ -8,6 +8,9 @@
 //!   - NeoPixel (WS2812B) RGB LED on P0.16 instead of 3x PWM LEDs
 //!   - Mechanical push button on P1.02 instead of capacitive touch
 
+use adafruit_memory_layout::{FS_BASE, FS_END};
+use apps::Model;
+use embedded_hal::digital::v2::InputPin;
 use littlefs2::io::Result as LfsResult;
 use nfc_device::traits::nfc::{Device as NfcDevice, Error as NfcError, State as NfcState};
 use nrf52840_hal::{
@@ -15,14 +18,11 @@ use nrf52840_hal::{
     gpiote::Gpiote,
     pac,
 };
-use embedded_hal::digital::v2::InputPin;
 use nrf52840_pac::{FICR, GPIOTE, P0, P1, POWER};
-use adafruit_memory_layout::{FS_BASE, FS_END};
-use apps::Model;
 use runner::{
     ui::{
         buttons::{Button, Press, UserPresence},
-        rgb_led,
+        rgb_led::{self, Indicator},
         UserInterface,
     },
     Board,
@@ -139,13 +139,16 @@ impl Press for HardwareButtons {
 const T0H: u16 = 6 | 0x8000;
 const T1H: u16 = 13 | 0x8000;
 const CTOPVAL: u16 = 20;
+const NEOPIXEL_LEVEL: u8 = 7;
+const PANIC_HALF_PERIOD_CYCLES: u32 = 8_000_000;
 
 // DMA buffer: 24 GRB bits + 2 zero padding. Must be static for DMA access.
 static mut PIXEL_PATTERN: [u16; 26] = [0u16; 26];
 
 pub struct AdafruitLed {
-    red_led: OutPin,   // P1.15, active-high
-    blue_led: OutPin,  // P1.10, active-high
+    red_led: OutPin,  // P1.15, active-high
+    blue_led: OutPin, // P1.10, active-high
+    neopixel: (u8, u8, u8),
 }
 
 impl AdafruitLed {
@@ -154,8 +157,22 @@ impl AdafruitLed {
         let _ = power_pin;
 
         neopixel_init(neopixel_pin.pin() as u32);
+        neopixel_show(0, 0, 0);
 
-        Self { red_led, blue_led }
+        Self {
+            red_led,
+            blue_led,
+            neopixel: (0, 0, 0),
+        }
+    }
+}
+
+fn set_pin(pin: &mut OutPin, on: bool) {
+    use embedded_hal::digital::v2::OutputPin;
+    if on {
+        pin.set_high().ok();
+    } else {
+        pin.set_low().ok();
     }
 }
 
@@ -172,8 +189,12 @@ fn neopixel_init(data_pin: u32) {
 
     pwm.mode.write(|w| w.updown().up());
     pwm.prescaler.write(|w| w.prescaler().div_1()); // 16MHz
-    pwm.countertop.write(|w| unsafe { w.countertop().bits(CTOPVAL) });
-    pwm.decoder.write(|w| { w.load().common(); w.mode().refresh_count() });
+    pwm.countertop
+        .write(|w| unsafe { w.countertop().bits(CTOPVAL) });
+    pwm.decoder.write(|w| {
+        w.load().common();
+        w.mode().refresh_count()
+    });
     pwm.loop_.write(|w| w.cnt().disabled());
     pwm.seq0.refresh.write(|w| unsafe { w.bits(0) });
     pwm.seq0.enddelay.write(|w| unsafe { w.bits(0) });
@@ -182,10 +203,6 @@ fn neopixel_init(data_pin: u32) {
 }
 
 fn neopixel_show(r: u8, g: u8, b: u8) {
-    // Scale down brightness — NeoPixel is extremely bright at full duty.
-    let r = (r as u16 * 8 / 255) as u8;
-    let g = (g as u16 * 8 / 255) as u8;
-    let b = (b as u16 * 8 / 255) as u8;
     let grb: [u8; 3] = [g, r, b];
     let pattern = unsafe { &mut *(&raw mut PIXEL_PATTERN) };
 
@@ -201,7 +218,9 @@ fn neopixel_show(r: u8, g: u8, b: u8) {
 
     let pwm = unsafe { &*pac::PWM1::ptr() };
 
-    pwm.seq0.ptr.write(|w| unsafe { w.bits(pattern.as_ptr() as u32) });
+    pwm.seq0
+        .ptr
+        .write(|w| unsafe { w.bits(pattern.as_ptr() as u32) });
     pwm.seq0.cnt.write(|w| unsafe { w.bits(26) });
 
     pwm.events_seqend[0].reset();
@@ -213,47 +232,47 @@ fn neopixel_show(r: u8, g: u8, b: u8) {
 }
 
 impl rgb_led::RgbLed for AdafruitLed {
-    fn set_panic_led() {
+    fn panic_loop() -> ! {
+        cortex_m::interrupt::disable();
         let pac = unsafe { nrf52840_pac::Peripherals::steal() };
         let p0 = p0::Parts::new(pac.P0);
         let p1 = p1::Parts::new(pac.P1);
-        p1.p1_15.into_push_pull_output(Level::Low);
+        let mut red = p1.p1_15.into_push_pull_output(Level::Low).degrade();
         p1.p1_10.into_push_pull_output(Level::Low);
         p1.p1_14.into_push_pull_output(Level::High);
         let neopixel = p0.p0_16.into_push_pull_output(Level::Low).degrade();
         neopixel_init(neopixel.pin() as u32);
-        neopixel_show(u8::MAX, 0, 0);
-    }
-
-    fn red(&mut self, intensity: u8) {
-        use embedded_hal::digital::v2::OutputPin;
-        if intensity > 0 {
-            self.red_led.set_high().ok();
-        } else {
-            self.red_led.set_low().ok();
+        neopixel_show(0, 0, 0);
+        loop {
+            set_pin(&mut red, true);
+            cortex_m::asm::delay(PANIC_HALF_PERIOD_CYCLES);
+            set_pin(&mut red, false);
+            cortex_m::asm::delay(PANIC_HALF_PERIOD_CYCLES);
         }
     }
 
-    fn green(&mut self, intensity: u8) {
-        neopixel_show(0, intensity, 0);
-    }
-
-    fn blue(&mut self, intensity: u8) {
-        use embedded_hal::digital::v2::OutputPin;
-        if intensity > 0 {
-            self.blue_led.set_high().ok();
-        } else {
-            self.blue_led.set_low().ok();
+    fn show(&mut self, indicator: Indicator, lit: bool) {
+        let red = lit && indicator == Indicator::Error;
+        let blue = lit
+            && matches!(
+                indicator,
+                Indicator::Startup
+                    | Indicator::Provisioner
+                    | Indicator::Processing
+                    | Indicator::Success
+            );
+        let neopixel = match indicator {
+            Indicator::UserPresence if lit => (0, NEOPIXEL_LEVEL, 0),
+            Indicator::Wink if lit => (NEOPIXEL_LEVEL, NEOPIXEL_LEVEL, NEOPIXEL_LEVEL),
+            _ => (0, 0, 0),
+        };
+        set_pin(&mut self.red_led, red);
+        set_pin(&mut self.blue_led, blue);
+        if neopixel != self.neopixel {
+            let (r, g, b) = neopixel;
+            neopixel_show(r, g, b);
+            self.neopixel = neopixel;
         }
-    }
-
-    fn set(&mut self, intensities: rgb_led::Intensities) {
-        let white = intensities.red > 0 && intensities.green > 0 && intensities.blue > 0;
-        let red = !white && intensities.red > 0;
-        let blue = !white && !red && (intensities.green > 0 || intensities.blue > 0);
-        self.green(if white { intensities.green } else { 0 });
-        self.red(if red { intensities.red } else { 0 });
-        self.blue(if blue { u8::MAX } else { 0 });
     }
 }
 
@@ -277,7 +296,7 @@ pub struct BoardGPIO {
 /// | User button     | P1.02   | Active-low, internal pullup    |
 /// | NeoPixel data   | P0.16   | WS2812B data                   |
 /// | NeoPixel power  | P1.14   | Must be HIGH to power NeoPixel |
-/// | Red LED         | P1.15   | Simple GPIO LED (panic only)   |
+/// | Red LED         | P1.15   | Simple GPIO LED (error, panic) |
 pub fn init_pins(gpiote: GPIOTE, p0: P0, p1: P1) -> BoardGPIO {
     let gpiote = Gpiote::new(gpiote);
     let gpio_p0 = p0::Parts::new(p0);

@@ -34,3 +34,6 @@
 [submodule "nk3/ctap-types"]
 	path = nk3/ctap-types
 	url = https://github.com/trussed-dev/ctap-types.git
+[submodule "bootloader"]
+	path = bootloader
+	url = https://github.com/adafruit/Adafruit_nRF52_Bootloader.git

@@ -8,10 +8,24 @@ TARGET=thumbv7em-none-eabihf
 NAME=board-adafruit-nrf52840
 ELF=target/${TARGET}/release/${NAME}
 
+BOOTLOADER_BOARD=feather_nrf52840_express
+BOOTLOADER_SD_VERSION=7.3.0
+BOOTLOADER_BUILD_DIR=target/bootloader
+
+patch_dir() {
+    local name
+    name=$(basename "$1" .patch)
+    if [ "${name}" = bootloader ]; then
+        echo bootloader
+    else
+        echo "nk3/${name}"
+    fi
+}
+
 apply_patches() {
     local patch dir
     for patch in patches/*.patch; do
-        dir=nk3/$(basename "${patch}" .patch)
+        dir=$(patch_dir "${patch}")
         if git -C "${dir}" apply --reverse --check "${PWD}/${patch}" 2>/dev/null; then
             continue
         fi
@@ -23,7 +37,7 @@ apply_patches() {
 revert_patches() {
     local patch dir
     for patch in patches/*.patch; do
-        dir=nk3/$(basename "${patch}" .patch)
+        dir=$(patch_dir "${patch}")
         if git -C "${dir}" apply --reverse --check "${PWD}/${patch}" 2>/dev/null; then
             echo "Reverting ${patch} from ${dir}"
             git -C "${dir}" apply --reverse "${PWD}/${patch}"
@@ -41,6 +55,21 @@ case "${1:-build}" in
         cargo build --target ${TARGET} --release
         echo "Built ${ELF}"
         ;;
+    bootloader)
+        for tool in arm-none-eabi-gcc arm-none-eabi-objcopy cmake; do
+            if ! command -v ${tool} >/dev/null; then
+                echo "${tool} not found in PATH" >&2
+                exit 1
+            fi
+        done
+        apply_patches
+        git -C bootloader submodule update --init
+        cmake -S bootloader -B ${BOOTLOADER_BUILD_DIR} \
+            -DBOARD=${BOOTLOADER_BOARD} \
+            -DSD_VERSION=${BOOTLOADER_SD_VERSION}
+        cmake --build ${BOOTLOADER_BUILD_DIR} -j"$(nproc)"
+        ls -1 ${BOOTLOADER_BUILD_DIR}/*.hex ${BOOTLOADER_BUILD_DIR}/*.uf2
+        ;;
     patch)
         apply_patches
         ;;
@@ -48,7 +77,7 @@ case "${1:-build}" in
         revert_patches
         ;;
     *)
-        echo "Usage: $0 [build|patch|clean]" >&2
+        echo "Usage: $0 [build|bootloader|patch|clean]" >&2
         exit 1
         ;;
 esac

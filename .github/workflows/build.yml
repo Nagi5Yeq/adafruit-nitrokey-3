@@ -59,3 +59,28 @@ jobs:
           name: board-adafruit-nrf52840-${{ matrix.toolchain }}
           path: target/thumbv7em-none-eabihf/release/board-adafruit-nrf52840
           if-no-files-found: error
+
+  bootloader:
+    name: Build bootloader
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-none-eabi libnewlib-arm-none-eabi cmake python3-intelhex
+
+      - name: Build
+        run: ./build.sh bootloader
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: bootloader-feather_nrf52840_express
+          path: |
+            target/bootloader/*.hex
+            target/bootloader/*.uf2
+          if-no-files-found: error

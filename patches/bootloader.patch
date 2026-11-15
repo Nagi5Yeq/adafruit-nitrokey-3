@@ -1,0 +1,30 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 120f584..97f4264 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -286,8 +286,8 @@ elseif (MCU_VARIANT STREQUAL "nrf52833")
+   endif ()
+ elseif (MCU_VARIANT STREQUAL "nrf52840")
+   set(DFU_DEV_REV 52840)
+-  # App reserved 40KB (8+32) to match circuitpython for 840
+-  set(DFU_APP_DATA_RESERVED 10*4096)
++  # App reserved 80KB for the filesystem region 0xE0000-0xF4000
++  set(DFU_APP_DATA_RESERVED 0x14000)
+   target_compile_definitions(bootloader PUBLIC NRF52840_XXAA)
+   if (NOT DEFINED SD_NAME)
+     set(SD_NAME s140)
+diff --git a/Makefile b/Makefile
+index 5866d15..e49ede2 100644
+--- a/Makefile
++++ b/Makefile
+@@ -135,8 +135,8 @@ else ifeq ($(MCU_SUB_VARIANT),nrf52833)
+ else ifeq ($(MCU_SUB_VARIANT),nrf52840)
+   CFLAGS += -DNRF52840_XXAA
+   DFU_DEV_REV = 52840
+-  # App reserved 40KB (8+32) to match circuitpython for 840
+-  DFU_APP_DATA_RESERVED=10*4096
++  # App reserved 80KB for the filesystem region 0xE0000-0xF4000
++  DFU_APP_DATA_RESERVED=0x14000
+   ifndef SD_NAME
+ 		SD_NAME = s140
+ 	endif

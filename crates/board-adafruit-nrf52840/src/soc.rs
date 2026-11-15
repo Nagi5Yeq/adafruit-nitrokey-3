@@ -4,7 +4,7 @@ use nrf52840_hal::{
     usbd::{UsbPeripheral, Usbd},
     wdt::{self, count::One, handles::Hdl0, Watchdog, WatchdogHandle},
 };
-use nrf52840_pac::{power::RESETREAS, Interrupt, SCB, WDT};
+use nrf52840_pac::{power::RESETREAS, Interrupt, MPU, SCB, WDT};
 use usb_device::bus::UsbBusAllocator;
 
 use runner::{Soc, Uuid, WATCHDOG_DURATION_SECONDS};
@@ -146,6 +146,32 @@ pub struct ResetReason {
     pub dif: bool,
     pub nfc: bool,
     pub vbus: bool,
+}
+
+const STACK_GUARD_SIZE: u32 = 1024;
+
+extern "C" {
+    static _stack_end: u32;
+}
+
+pub fn init_stack_guard(mpu: &MPU) -> u32 {
+    const RASR_XN: u32 = 1 << 28;
+    const RASR_ENABLE: u32 = 1;
+    const CTRL_PRIVDEFENA: u32 = 1 << 2;
+    const CTRL_ENABLE: u32 = 1;
+
+    let stack_end = (&raw const _stack_end) as u32;
+    let base = (stack_end + STACK_GUARD_SIZE - 1) & !(STACK_GUARD_SIZE - 1);
+    let size = (STACK_GUARD_SIZE.trailing_zeros() - 1) << 1;
+    unsafe {
+        mpu.rnr.write(0);
+        mpu.rbar.write(base);
+        mpu.rasr.write(RASR_XN | size | RASR_ENABLE);
+        mpu.ctrl.write(CTRL_PRIVDEFENA | CTRL_ENABLE);
+    }
+    cortex_m::asm::dsb();
+    cortex_m::asm::isb();
+    base
 }
 
 pub fn reset_reason(reset_reason: &RESETREAS) -> ResetReason {

@@ -102,6 +102,9 @@ mod app {
 
         runner::init::init_logger::<Board>(&crate::FLUSHER, crate::VERSION_STRING);
 
+        let _stack_guard = soc::init_stack_guard(&ctx.core.MPU);
+        debug_now!("Stack guard: {_stack_guard:#010x}");
+
         let reset_reason = soc::reset_reason(&ctx.device.POWER.resetreas);
         debug_now!("Reset Reason: {reset_reason:?}");
 
